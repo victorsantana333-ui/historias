@@ -51,8 +51,7 @@ import {
   ArrowLeft
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useDonation, money } from './useDonation';
-import { useCampaign } from './useCampaign';
+const DONATION_URL = 'https://deflow.exchange/qr/historias-unicas';
 
 // Custom Pix Logo Icon
 const PixIcon = ({ className = "w-5 h-5" }) => (
@@ -62,19 +61,9 @@ const PixIcon = ({ className = "w-5 h-5" }) => (
   </svg>
 );
 
-interface Supporter {
-  name: string;
-  value: string;
-  time: string;
-  isNew?: boolean;
-}
-
 export default function App() {
   // Campaign state
   const goalAmount = 288000;
-  const { raisedAmount, supporterCount, supporters: campaignSupporters, notice } = useCampaign();
-  const supporters: Supporter[] = campaignSupporters;
-  const percentReached = Math.min(Math.round((raisedAmount / goalAmount) * 100), 100);
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
 
   // Video state
@@ -97,19 +86,10 @@ export default function App() {
   // FAQ state
   const [faqOpen, setFaqOpen] = useState<number[]>([0]); // Open first by default
 
-  // Donation Modal state
-  const [isDonationModalOpen, setIsDonationModalOpen] = useState<boolean>(false);
-  const [donationStep, setDonationStep] = useState<number>(1); // 1: Value, 2: Payer and quote, 3: Pix, 4: Confirmed
-  const [selectedPreset, setSelectedPreset] = useState<string>("R$ 100");
-  const [customValue, setCustomValue] = useState<string>("");
-  const [turbinarDoacao, setTurbinarDoacao] = useState<boolean>(false);
-  const [pixCopiado, setPixCopiado] = useState<boolean>(false);
-
   // General state
   const [shareToast, setShareToast] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>("A História");
 
-  const [payerTaxNumber, setPayerTaxNumber] = useState("");
 
   // Menu items from JSON
   const menuItems = [
@@ -150,15 +130,6 @@ export default function App() {
     }
   };
 
-  const handleCopyPix = (keyText: string, setCopiedState: (v: boolean) => void) => {
-    navigator.clipboard.writeText(keyText).then(() => {
-    setCopiedState(true);
-    setTimeout(() => {
-      setCopiedState(false);
-    }, 3000);
-    }).catch(() => alert("Não foi possível copiar. Selecione e copie o código manualmente."));
-  };
-
   const handleShare = () => {
     if (navigator.share) {
       navigator.share({
@@ -174,29 +145,6 @@ export default function App() {
       setTimeout(() => setShareToast(false), 3500);
     }
   };
-
-  // Helper to get normalized donation amount with minimum R$ 5
-  const getDonationAmount = (): number => {
-    if (selectedPreset && selectedPreset !== "Outro Valor") {
-      const val = parseFloat(selectedPreset.replace("R$ ", "")) || 30;
-      return Math.max(5, val);
-    }
-    const parsed = parseFloat(customValue.replace(/\./g, "").replace(",", "."));
-    if (isNaN(parsed) || parsed < 5) {
-      return 5;
-    }
-    return parsed;
-  };
-
-  const parsedCustomValue = parseFloat(customValue.replace(/\./g, "").replace(",", "."));
-  const isCustomValueBelowMin = customValue.trim() !== "" && (isNaN(parsedCustomValue) || parsedCustomValue < 5);
-  const isContinueDisabled = (!selectedPreset && !customValue.trim()) || (customValue.trim() !== "" && isCustomValueBelowMin);
-
-  const amountCents = Math.round(getDonationAmount() * 100) + (turbinarDoacao ? 499 : 0);
-  const donation = useDonation(amountCents, isDonationModalOpen && donationStep === 2);
-  useEffect(() => {
-    if (donation.payment) setDonationStep(donation.paid ? 4 : 3);
-  }, [donation.payment, donation.paid, isDonationModalOpen]);
 
   const toggleFaq = (index: number) => {
     if (faqOpen.includes(index)) {
@@ -227,7 +175,7 @@ export default function App() {
     <div className="min-h-screen bg-[#FAFAF7] font-sans text-brand-text pb-28 md:pb-24 selection:bg-brand-yellow/30">
       
       <div role="note" className="mt-16 bg-amber-50 text-amber-900 p-3 text-center text-xs">
-        {notice}
+        Você será direcionado à DeFlow para escolher o valor e concluir sua doação por Pix.
       </div>
       {/* Fixed Header */}
       <header className="fixed top-0 left-0 right-0 h-16 bg-[#FAFAF7]/90 backdrop-blur-md border-b border-[#e5e5df] z-50 transition-all duration-300">
@@ -267,15 +215,9 @@ export default function App() {
             >
               <Share2 className="w-5 h-5" />
             </button>
-            <button 
-              onClick={() => {
-                setDonationStep(1);
-                setIsDonationModalOpen(true);
-              }}
-              className="px-4 py-2 bg-brand-yellow hover:bg-yellow-500 text-[#1E3A5F] font-bold rounded-lg text-xs tracking-wider transition-all shadow-sm hover:shadow active:scale-95"
-            >
+            <a href={DONATION_URL} className="px-4 py-2 bg-brand-yellow hover:bg-yellow-500 text-[#1E3A5F] font-bold rounded-lg text-xs tracking-wider transition-all shadow-sm hover:shadow active:scale-95" aria-label="Doar por Pix na DeFlow">
               DOAR AGORA
-            </button>
+            </a>
           </div>
         </div>
       </header>
@@ -445,53 +387,18 @@ export default function App() {
 
         {/* Dynamic Crowdfunding Stats Dashboard */}
         <section className="bg-white rounded-2xl p-5 md:p-6 border border-[#e5e5df] shadow-sm mb-6">
-          <div className="grid grid-cols-3 gap-2 md:gap-4 text-center mb-4 border-b border-gray-100/60 pb-4">
-            <div>
-              <span className="block text-lg md:text-2xl font-extrabold text-primary-navy">
-                R$ {raisedAmount.toLocaleString('pt-BR')}
-              </span>
-              <span className="block text-gray-400 text-xs font-medium">arrecadados</span>
-            </div>
-            <div className="border-x border-gray-100">
-              <span className="block text-lg md:text-2xl font-extrabold text-primary-navy">
-                {supporterCount.toLocaleString('pt-BR')}
-              </span>
-              <span className="block text-gray-400 text-xs font-medium">doações</span>
-            </div>
-            <div>
-              <span className="block text-lg md:text-2xl font-extrabold text-primary-navy">
-                R$ {goalAmount.toLocaleString('pt-BR')}
-              </span>
-              <span className="block text-gray-400 text-xs font-medium">meta</span>
-            </div>
-          </div>
-
-          {/* Progress Bar with pulse indicator */}
-          <div className="mb-4">
-            <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-2 border border-gray-200/30">
-              <div 
-                className="h-full bg-primary-navy rounded-full transition-all duration-1000"
-                style={{ width: `${percentReached}%` }}
-              ></div>
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-gray-500 font-semibold">
-              <span className="w-2 h-2 rounded-full bg-[#5B89BA]"></span>
-              <span>{percentReached}% da meta atingida</span>
-            </div>
+          <div className="text-center space-y-2">
+            <p className="text-xs text-gray-500">Meta da campanha</p>
+            <p className="text-2xl font-extrabold text-primary-navy">R$ {goalAmount.toLocaleString('pt-BR')}</p>
+            <p className="text-sm text-gray-600">Sua contribuição ajuda o Luiz Miguel. Escolha o valor e gere o Pix na página da DeFlow.</p>
           </div>
 
           {/* Large CTA and Share row */}
           <div className="flex flex-col gap-3 mt-5">
-            <button
-              onClick={() => {
-                setDonationStep(1);
-                setIsDonationModalOpen(true);
-              }}
-              className="w-full flex items-center justify-center gap-2 py-3.5 px-6 bg-brand-yellow hover:bg-yellow-500 text-primary-navy font-bold rounded-xl transition-all shadow-sm active:scale-98 text-xs md:text-sm tracking-wider uppercase"
-            >
+            <a href={DONATION_URL} className="w-full flex items-center justify-center gap-2 py-3.5 px-6 bg-brand-yellow hover:bg-yellow-500 text-primary-navy font-bold rounded-xl transition-all shadow-sm active:scale-98 text-xs md:text-sm tracking-wider uppercase" aria-label="Doar por Pix na DeFlow">
               <Heart className="w-4 h-4 fill-primary-navy" />
               QUERO AJUDAR AGORA
-            </button>
+            </a>
             <button
               onClick={handleShare}
               className="w-full py-2.5 px-6 bg-[#FAFAF7] hover:bg-gray-100 text-gray-600 font-bold rounded-xl transition-all border border-[#e5e5df] text-xs flex items-center justify-center gap-2 active:scale-98"
@@ -679,45 +586,8 @@ export default function App() {
             </h2>
           </div>
 
-          <div className="bg-white rounded-2xl border border-[#e5e5df] shadow-sm divide-y divide-gray-100 overflow-hidden">
-            {supporters.length === 0 && <p className="p-4 text-sm text-gray-500">Ainda não há doações confirmadas para exibir.</p>}
-            {supporters.map((sup, idx) => (
-              <div 
-                key={idx} 
-                className={`p-4 flex items-center justify-between gap-3 transition-colors ${
-                  sup.isNew ? 'bg-brand-green/5 animate-pulse' : 'hover:bg-gray-50/50'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  {/* Animated avatar */}
-                  <div className="w-10 h-10 rounded-full bg-primary-navy/5 text-primary-navy flex items-center justify-center font-bold text-sm relative">
-                    {sup.name.substring(0, 2).toUpperCase()}
-                    {sup.isNew && <span className="absolute -top-1 -right-1 w-3 h-3 bg-brand-green border-2 border-white rounded-full"></span>}
-                  </div>
-                  <div>
-                    <h4 className="text-xs md:text-sm font-bold text-primary-navy flex items-center gap-1">
-                      {sup.name}
-                      {sup.isNew && (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-brand-green text-white text-[9px] rounded font-extrabold uppercase tracking-wide">
-                          NOVO!
-                        </span>
-                      )}
-                    </h4>
-                    <span className="text-[10px] md:text-xs text-gray-400 font-medium flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {sup.time}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="text-right">
-                  <span className="text-xs md:text-sm font-extrabold text-primary-navy">
-                    {sup.value}
-                  </span>
-                  <p className="text-[10px] text-gray-400 font-bold">Apoiou a causa</p>
-                </div>
-              </div>
-            ))}
+          <div className="bg-white rounded-2xl border border-[#e5e5df] p-5 text-sm text-gray-600">
+            Obrigado a cada pessoa que contribui e compartilha esta campanha. As doações são processadas na DeFlow; a lista e o total de pagamentos não são exibidos nesta página.
           </div>
         </section>
 
@@ -889,7 +759,7 @@ export default function App() {
               </button>
               {faqOpen.includes(1) && (
                 <div className="px-4 pb-4 text-xs md:text-sm text-gray-600 leading-relaxed border-t border-gray-100 pt-3">
-                  O valor mínimo para doação é de R$ 5,00. Qualquer valor a partir de R$ 5,00 já ajuda o Luiz Miguel a atingir a meta mensal do remédio. Cada pequeno esforço conjunto soma no total do tratamento.
+                  Os valores disponíveis e os limites para doar são informados na página de pagamento da DeFlow. Cada contribuição ajuda o Luiz Miguel.
                 </div>
               )}
             </div>
@@ -1000,23 +870,14 @@ export default function App() {
       <div className="fixed bottom-0 left-0 right-0 bg-[#FAFAF7] border-t border-[#e5e5df] shadow-[0_-4px_12px_rgba(0,0,0,0.05)] z-40 py-3.5 px-4 animate-slide-up">
         <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
           <div className="text-left shrink-0">
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-sm md:text-lg font-black text-primary-navy">R$ {raisedAmount.toLocaleString('pt-BR')}</span>
-              <span className="text-[10px] text-gray-400">de R$ {goalAmount.toLocaleString('pt-BR')} ({percentReached}%)</span>
-            </div>
-            <span className="block text-[10px] text-gray-500 font-semibold">{supporterCount.toLocaleString('pt-BR')} doações confirmadas</span>
+            <span className="block text-sm font-black text-primary-navy">Ajude o Luiz Miguel</span>
+            <span className="block text-[10px] text-gray-500">Pagamento por Pix na DeFlow</span>
           </div>
 
-          <button
-            onClick={() => {
-              setDonationStep(1);
-              setIsDonationModalOpen(true);
-            }}
-            className="flex-1 max-w-sm py-3 px-4 md:px-6 bg-brand-yellow hover:bg-yellow-500 text-primary-navy font-bold rounded-xl text-xs md:text-sm tracking-wider uppercase transition-all shadow-sm active:scale-97 text-center flex items-center justify-center gap-1.5"
-          >
+          <a href={DONATION_URL} className="flex-1 max-w-sm py-3 px-4 md:px-6 bg-brand-yellow hover:bg-yellow-500 text-primary-navy font-bold rounded-xl text-xs md:text-sm tracking-wider uppercase transition-all shadow-sm active:scale-97 text-center flex items-center justify-center gap-1.5" aria-label="Doar por Pix na DeFlow">
             <Heart className="w-4 h-4 fill-primary-navy" />
             DOAR AGORA
-          </button>
+          </a>
         </div>
       </div>
 
@@ -1044,294 +905,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Donation Flow Interactive Modal */}
-      {isDonationModalOpen && (
-        <div className="fixed inset-0 bg-black/75 z-[90] flex items-center justify-center p-4 backdrop-blur-xs animate-fade-in">
-          <div 
-            className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-gray-100 flex flex-col max-h-[90vh]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="p-4 flex items-center justify-between border-b border-gray-100 shrink-0 bg-[#FAFAF7]">
-              {donationStep === 1 ? (
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-[#EAF2FC] flex items-center justify-center">
-                    <Heart className="w-5 h-5 text-[#1E3A5F] fill-[#1E3A5F]" />
-                  </div>
-                  <h3 className="font-serif font-bold text-base text-[#1E3A5F]">Qual valor deseja doar?</h3>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={() => setDonationStep(prev => prev - 1)}
-                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#1E3A5F] font-bold transition-colors cursor-pointer mr-1"
-                  >
-                    <ArrowLeft className="w-3.5 h-3.5" /> Voltar
-                  </button>
-                  <h3 className="font-serif font-bold text-base text-[#1E3A5F]">
-                    {donationStep === 2 && "Complete seus dados"}
-                    {donationStep === 3 && "Chave de Pagamento"}
-                    {donationStep === 4 && "Sucesso!"}
-                  </h3>
-                </div>
-              )}
-
-              <button 
-                onClick={() => {
-                  setIsDonationModalOpen(false);
-                  setDonationStep(1);
-                }}
-                className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Content Scrollable Area */}
-            <div className="p-5 overflow-y-auto space-y-4">
-              
-              {/* STEP 1: VALUE SELECTION */}
-              {donationStep === 1 && (
-                <div className="space-y-4">
-                  {/* Single Tab Display */}
-                  <div className="bg-[#4F7EBE] text-white font-extrabold py-3 px-4 text-center rounded-xl text-xs uppercase tracking-wider shadow-sm">
-                    Doação Única
-                  </div>
-                  
-                  {/* Preset Values Grid */}
-                  <div className="grid grid-cols-3 gap-3">
-                    {[
-                      { val: "R$ 20", popular: false },
-                      { val: "R$ 30", popular: true },
-                      { val: "R$ 50", popular: false },
-                      { val: "R$ 100", popular: false },
-                      { val: "R$ 150", popular: false },
-                      { val: "R$ 200", popular: false },
-                      { val: "R$ 250", popular: false },
-                      { val: "R$ 500", popular: false },
-                      { val: "R$ 1.000", popular: false }
-                    ].map((item) => {
-                      const isSelected = selectedPreset === item.val && customValue === "";
-                      return (
-                        <button
-                          key={item.val}
-                          onClick={() => {
-                            setSelectedPreset(item.val);
-                            setCustomValue("");
-                          }}
-                          className={`py-3 px-1 rounded-xl text-sm font-extrabold border-2 transition-all relative cursor-pointer ${
-                            isSelected
-                              ? 'border-[#4F7EBE] bg-[#EAF2FC] text-[#1E3A5F]'
-                              : 'border-gray-100 bg-gray-50 text-[#1E3A5F] hover:bg-gray-100'
-                          }`}
-                        >
-                          {item.val}
-                          {item.popular && (
-                            <span className="bg-[#FAD02C] text-[#5E4B00] text-[8px] px-1.5 py-0.2 rounded-md font-extrabold absolute -top-1.5 right-2 shadow-xs lowercase">
-                              popular
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Custom Value Section */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="block text-xs font-bold text-gray-500">Ou o que o seu coração mandar ❤️:</span>
-                      <span className="text-[11px] font-semibold text-gray-400">Mínimo R$ 5,00</span>
-                    </div>
-                    <div className={`flex items-center rounded-xl border transition-all bg-white overflow-hidden ${
-                      isCustomValueBelowMin 
-                        ? 'border-red-400 ring-1 ring-red-400 focus-within:border-red-500 focus-within:ring-red-500' 
-                        : 'border-gray-200 focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400'
-                    }`}>
-                      <div className={`px-4 py-3 border-r font-extrabold text-sm shrink-0 select-none ${
-                        isCustomValueBelowMin ? 'bg-red-50 text-red-600 border-red-200' : 'bg-[#EAF2FC] text-[#1E3A5F] border-gray-200'
-                      }`}>
-                        R$
-                      </div>
-                      <input
-                        type="number"
-                        min="5"
-                        step="any"
-                        placeholder="Valor livre (mínimo R$ 5,00)"
-                        value={customValue}
-                        onChange={(e) => {
-                          setCustomValue(e.target.value);
-                          setSelectedPreset("");
-                        }}
-                        className="w-full px-4 py-3 text-sm focus:outline-none font-bold text-primary-navy placeholder:text-gray-400 placeholder:font-normal"
-                      />
-                    </div>
-                    {isCustomValueBelowMin && (
-                      <p className="text-xs text-red-600 font-semibold flex items-center gap-1 mt-1">
-                        <span>⚠️ O valor mínimo para doação é de R$ 5,00</span>
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Continuing Button */}
-                  <button
-                    onClick={() => {
-                      if (!isContinueDisabled) {
-                        setDonationStep(2);
-                      }
-                    }}
-                    disabled={isContinueDisabled}
-                    className="w-full py-3.5 bg-brand-yellow hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed text-primary-navy font-black rounded-xl text-xs tracking-wider transition-all shadow flex items-center justify-center gap-1 active:scale-98 cursor-pointer disabled:pointer-events-none"
-                  >
-                    CONTINUAR ➔
-                  </button>
-
-                  <div className="flex items-center justify-center gap-1.5 text-xs text-[#2E9D65] font-semibold">
-                    <ShieldCheck className="w-4 h-4 fill-[#2E9D65]/10" />
-                    <span>Pagamento 100% seguro e verificado</span>
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 2: COMPLETE PERSONAL DATA */}
-              {donationStep === 2 && (
-                <div className="space-y-4">
-                  {/* Badge showing selected amount */}
-                  <div className="flex justify-start">
-                    <div className="inline-flex items-center gap-1 px-4 py-1.5 bg-[#EAF2FC] text-[#1E3A5F] font-bold text-xs tracking-wide rounded-full uppercase">
-                      <span className="opacity-75">DOANDO</span>
-                      <span>
-                        R$ {getDonationAmount().toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label htmlFor="payer-document" className="block text-xs font-bold text-primary-navy">CPF/CNPJ de quem vai pagar (obrigatório)</label>
-                    <input id="payer-document" inputMode="numeric" autoComplete="off" maxLength={18}
-                      value={payerTaxNumber} onChange={e => setPayerTaxNumber(e.target.value)}
-                      className="w-full rounded-xl border border-gray-200 p-3 text-sm" />
-                    <p className="text-xs text-gray-500">Enviado à DeFlow para processar o Pix. Este documento não aparece publicamente na página.</p>
-                  </div>
-
-                  {/* Turbinar Doação Option */}
-                  <div className="bg-[#FFFDF0] border border-[#F7EBB2] rounded-2xl p-4 flex gap-3.5 items-start">
-                    <input 
-                      type="checkbox" 
-                      id="turbinar" 
-                      checked={turbinarDoacao}
-                      onChange={(e) => setTurbinarDoacao(e.target.checked)}
-                      className="w-5 h-5 text-yellow-500 border-gray-300 rounded focus:ring-yellow-400 cursor-pointer mt-0.5 shrink-0"
-                    />
-                    <div className="space-y-0.5">
-                      <label htmlFor="turbinar" className="text-xs md:text-sm font-bold text-[#7C5A03] flex items-center gap-1 select-none cursor-pointer">
-                        💛 Turbinar minha doação
-                      </label>
-                      <p className="text-[11px] text-gray-600 leading-relaxed">
-                        Adicionar R$ 4,99 à doação. As taxas da DeFlow são descontadas do total recebido em DePix.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="text-xs bg-gray-50 rounded-xl p-3 space-y-1" aria-live="polite">
-                    {donation.quote ? <>
-                      <p>Total a pagar: <strong>{money(donation.quote.amountCents)}</strong></p>
-                      <p>Taxas: {money(donation.quote.totalFeeCents)} · Taxa efetiva: {donation.quote.effectiveFeePercent}%</p>
-                      <p>Líquido estimado em DePix: {money(donation.quote.netAmountCents)} equivalentes.</p>
-                    </> : <p>{donation.quoteError || 'Consultando taxas…'}</p>}
-                  </div>
-                  {donation.error && <p role="alert" className="text-sm text-red-700">{donation.error}</p>}
-                  {/* Generate Pix Trigger */}
-                  <button
-                    onClick={() => donation.create(payerTaxNumber)}
-                    disabled={donation.loading || !donation.quote || !/^(\d{11}|\d{14})$/.test(payerTaxNumber.replace(/\D/g, ""))}
-                    className="w-full py-4 bg-brand-yellow hover:bg-yellow-500 text-[#1E3A5F] font-black rounded-xl text-xs tracking-wider uppercase transition-all shadow flex items-center justify-center gap-2 active:scale-98 cursor-pointer"
-                  >
-                    <PixIcon className="w-4 h-4 fill-[#1E3A5F]" />
-                    {donation.loading ? "GERANDO PIX…" : "GERAR PIX AGORA"}
-                  </button>
-
-                  <div className="flex items-center justify-center gap-1.5 text-xs text-[#2E9D65] font-semibold pt-1">
-                    <ShieldCheck className="w-4 h-4 fill-[#2E9D65]/10" />
-                    <span>Pagamento 100% seguro e verificado</span>
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 3: PIX QR CODE & DETAILS */}
-              {donationStep === 3 && (
-                <div className="space-y-4">
-                  {/* Badge showing final amount */}
-                  <div className="flex justify-start">
-                    <div className="inline-flex items-center gap-1 px-4 py-1.5 bg-[#EAF2FC] text-[#1E3A5F] font-bold text-xs tracking-wide rounded-full uppercase">
-                      <span className="opacity-75">TOTAL</span>
-                      <span>
-                        {money(donation.payment?.amountCents || amountCents)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="text-center">
-                    <span className="text-[10px] text-brand-green font-black tracking-widest uppercase block mb-1">CHAVE COPIA E COLA</span>
-                    <h4 className="text-base font-extrabold text-[#1E3A5F] font-serif">Apoie com Pix instantâneo</h4>
-                  </div>
-
-                  {donation.payment?.sandbox && <p role="status" className="text-sm text-amber-800">AMBIENTE DE TESTE — esta cobrança não representa uma doação real.</p>}
-                  {donation.qrImage && !donation.terminal && <img src={donation.qrImage} alt="QR Code Pix desta doação" className="mx-auto w-56 h-56" />}
-                  <div className="bg-gray-50 rounded-xl p-3 space-y-2">
-                    <label htmlFor="pix-code" className="text-xs font-bold">Pix copia e cola</label>
-                    <textarea id="pix-code" readOnly value={donation.payment?.qrCopyPaste || ''} className="w-full text-xs font-mono p-2" />
-                    <button disabled={!donation.payment?.qrCopyPaste || donation.terminal} onClick={() => handleCopyPix(donation.payment!.qrCopyPaste!, setPixCopiado)} className="w-full rounded-lg bg-brand-yellow p-3 font-bold">{pixCopiado ? 'Copiado!' : 'Copiar código Pix'}</button>
-                  </div>
-                  <div className="text-xs text-gray-600 space-y-2" aria-live="polite">
-                    <p>Total desta cobrança: <strong>{money(donation.payment?.amountCents || 0)}</strong></p>
-                    {donation.payment?.feeCents !== undefined && <p>Taxas: {money(donation.payment.feeCents)} · Líquido em DePix: {money(donation.payment.netAmountCents || 0)} equivalentes.</p>}
-                    {donation.payment?.expiresAt && <p>Vencimento: {new Date(donation.payment.expiresAt).toLocaleString('pt-BR', { timeZone: 'America/Bahia' })} (horário da Bahia).</p>}
-                    <p>Confira o recebedor e o valor no aplicativo do seu banco antes de pagar.</p>
-                    <p>Status: <strong>{donation.payment?.status}</strong></p>
-                    <p>{donation.terminal ? 'A consulta desta cobrança foi encerrada.' : 'Aguardando confirmação da DeFlow. Você pode fechar a página e retornar neste navegador para consultar novamente.'}</p>
-                    {donation.error && <p role="alert" className="text-red-700">{donation.error}</p>}
-                  </div>
-                  {donation.terminal && <button onClick={() => { donation.clear(); setDonationStep(1); }} className="w-full p-3 bg-brand-yellow rounded-xl font-bold">Iniciar outra doação</button>}
-
-                </div>
-              )}
-
-              {/* STEP 4: SUCCESS PAGE */}
-              {donationStep === 4 && (
-                <div className="space-y-4 text-center py-6 animate-fade-in">
-                  <div className="w-16 h-16 bg-brand-green/10 text-brand-green rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
-                    <CheckCircle2 className="w-10 h-10" />
-                  </div>
-
-                  <h3 className="text-xl font-bold font-serif text-[#1E3A5F]">Muito obrigado por sua solidariedade!</h3>
-                  
-                  <p className="text-xs md:text-sm text-gray-600 leading-relaxed max-w-xs mx-auto">
-                    A DeFlow confirmou o envio de DePix para a carteira da campanha. Obrigado por contribuir!
-                  </p>
-
-                  <div className="p-3 bg-[#F4FBF7] border border-[#E3F6ED] rounded-xl text-xs text-[#2E9D65] font-semibold">
-                    Seu Pix de {money(donation.payment?.amountCents || amountCents)} ajudará a salvar a infância de Luiz Miguel.
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      setIsDonationModalOpen(false);
-                      donation.clear();
-                      setDonationStep(1);
-                    }}
-                    className="w-full py-3.5 bg-primary-navy hover:bg-navy-800 text-white font-black rounded-xl text-xs tracking-wider uppercase transition-all shadow cursor-pointer"
-                  >
-                    CONCLUIR E VOLTAR AO SITE
-                  </button>
-                </div>
-              )}
-
-            </div>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }
-
