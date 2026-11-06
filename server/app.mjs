@@ -1,12 +1,22 @@
 import express from 'express';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createLedger } from './ledger.mjs';
+import { mountWebhook } from './webhook.mjs';
 
 class ApiError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
-export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
+export function createApp({ env = process.env, fetchImpl = fetch, ledger = createLedger(env.DATABASE_PATH || "data/donations.sqlite") } = {}) {
   const app = express();
   app.disable('x-powered-by');
+  let closed = false;
+  const drain = () => { if (!closed) { try { ledger.drain(); } catch { console.error('Falha na fila de pagamentos; os eventos serão tentados novamente.'); } } };
+  const worker = setInterval(drain, 1000); worker.unref();
+  const schedule = () => setImmediate(drain);
+  mountWebhook(app, { ledger, env, schedule });
+  schedule();
+  app.locals.ledger = ledger;
+
   app.use(express.json({ limit: '4kb' }));
   app.use('/api', (req, res, next) => {
     res.set('Cache-Control', 'no-store');
@@ -72,6 +82,7 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
   const wrap = fn => (req, res, next) => Promise.resolve().then(() => { ready(); return fn(req, res); }).catch(next);
   const safe = data => Object.fromEntries(['id','status','qrCopyPaste','expiresAt','amountCents','feeCents','netAmountCents','sandbox'].filter(k => data[k] !== undefined).map(k => [k, data[k]]));
 
+  app.get('/api/campaign', (req, res, next) => { try { res.json(ledger.summary()); } catch (e) { next(e); } });
   app.get('/api/donations/quote', wrap(async (req, res) => {
     const cents = amount(Number(req.query.amountCents));
     const key = `quote:${cents}`;
@@ -96,26 +107,32 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
     const data = await upstream('/v1/deposit/create', { method: 'POST', headers: { 'X-DF-Idempotency-Key': key }, body: JSON.stringify(body) });
     if (!/^[a-zA-Z0-9_-]{1,128}$/.test(data.id) || !data.qrCopyPaste) throw new ApiError(502, 'Cobrança sem dados suficientes. Tente novamente com a mesma tentativa.');
     if (data.amountCents !== undefined && data.amountCents !== amountInCents) throw new ApiError(502, 'A DeFlow retornou um valor diferente. Retome esta tentativa antes de gerar outra cobrança.');
-    res.status(201).json({ ...safe(data), amountCents: data.amountCents ?? amountInCents, accessToken: capability(data.id) });
+    const receipt = ledger.save({ ...safe(data), amountCents: data.amountCents ?? amountInCents });
+    schedule();
+    res.status(201).json({ ...receipt, accessToken: capability(data.id) });
   }));
   app.get('/api/donations/:id', wrap(async (req, res) => {
     const { id } = req.params;
     if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) throw new ApiError(400, 'Cobrança inválida.');
     verify((req.get('Authorization') || '').replace(/^Bearer /, ''), id);
+    const stored = ledger.get(id);
+    if (stored && ['depix_sent','refunded','expired','canceled','error'].includes(stored.status)) return res.json(stored);
     const key = `status:${id}`;
     let entry = cache.get(key);
     if (!entry || entry.until < Date.now()) {
       allow('status-minute', 50, 60000); allow('status-burst', 8, 5000);
       const data = await upstream(`/v1/deposit-status/${encodeURIComponent(id)}`);
       if (data.id !== id) throw new ApiError(502, 'Resposta de cobrança inconsistente.');
-      entry = { data: safe(data), until: Date.now() + 15000 };
+      const receipt = ledger.save(safe(data));
+      entry = { data: receipt, until: Date.now() + 15000 };
       cache.set(key, entry);
     }
-    res.json(entry.data);
+    res.json(ledger.get(id) || entry.data);
   }));
   // Bound memory use; cache is an optimization, not a payment ledger.
   const cleaner = setInterval(() => { for (const [key, value] of cache) if (value.until < Date.now()) cache.delete(key); }, 60000);
   cleaner.unref();
+  app.locals.close = () => { closed = true; clearInterval(worker); clearInterval(cleaner); ledger.close(); };
   app.use('/api', (err, req, res, next) => {
     const status = err.status || (err.name === 'TimeoutError' ? 503 : 502);
     res.status(status).json({ error: err instanceof ApiError ? err.message : 'Não foi possível consultar o pagamento. Tente novamente com a mesma tentativa.' });
