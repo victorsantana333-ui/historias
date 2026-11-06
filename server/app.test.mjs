@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { createApp } from './app.mjs';
 const env = { APP_ORIGIN: 'http://localhost:3000', DEFLOW_API_KEY: 'test-key', DEFLOW_API_SECRET: 'test-secret', PAYMENT_SIGNING_SECRET: 's'.repeat(64), DEFLOW_WALLET_ID: '69aefab9349f3138e50ce00a' };
 async function fixture(t, fetchImpl, config = env) {
-  const server = createApp({ env: config, fetchImpl }).listen(0, '127.0.0.1');
+  const app = createApp({ env: { ...config, DATABASE_PATH: ':memory:' }, fetchImpl });
+  const server = app.listen(0, '127.0.0.1');
+  t.after(() => app.locals.close());
   await new Promise(resolve => server.once('listening', resolve));
   t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
   return `http://127.0.0.1:${server.address().port}`;
@@ -29,7 +31,9 @@ test('creates exact payer amount, pins wallet server-side, protects status and f
   assert.equal((await fetch(`${base}/api/donations/another`, { headers: { Authorization: `Bearer ${data.accessToken}` } })).status, 403);
   assert.equal((await fetch(`${base}/api/donations/deposit_1`, { headers: { Authorization: `Bearer ${data.accessToken}x` } })).status, 403);
   const status = await fetch(`${base}/api/donations/deposit_1`, { headers: { Authorization: `Bearer ${data.accessToken}` } });
-  assert.deepEqual(await status.json(), { id: 'deposit_1', status: 'depix_sent', amountCents: 5000 });
+  const verified = await status.json();
+  assert.equal(verified.id, 'deposit_1'); assert.equal(verified.status, 'depix_sent'); assert.equal(verified.amountCents, 5000);
+  assert.equal(verified.walletId, undefined);
   await fetch(`${base}/api/donations/deposit_1`, { headers: { Authorization: `Bearer ${data.accessToken}` } });
   assert.equal(calls.length, 2, 'status cache reduces provider requests');
 });
