@@ -1,0 +1,6 @@
+{
+  "name": "Histórias Únicas",
+  "description": "Uma página de doação profissional, emocional e otimizada para a campanha de Luiz Miguel e seu pai Alex.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
