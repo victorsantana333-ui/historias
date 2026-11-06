@@ -1,10 +1,14 @@
-# Histórias Únicas — integração DeFlow
+# Histórias Únicas — doações com DeFlow
 
-Página React/Vite com servidor Node/Express. O servidor cria cobranças Pix e consulta a DeFlow sem expor a API key e o secret ao navegador. O pagamento em BRL é convertido em DePix e enviado à carteira Liquid da conta, descontadas as taxas. Não é uma transferência direta em reais para uma conta bancária.
+Página React/Vite com servidor Node/Express. O doador paga Pix em BRL; a DeFlow desconta as taxas e envia DePix à carteira Liquid da conta. Não se trata de recebimento direto em reais numa conta bancária.
+
+## Situação da entrega
+
+O código está na branch `codex/integracao-deflow-doacoes`, em proposta de alteração para `main`. Não foi publicado na hospedagem nem configurado com credenciais reais. O site publicado em `https://hist-rias-nicas.ai.studio/` foi inspecionado e ainda contém a versão original com QR ilustrativo/chave fixa e simulação de confirmação; a rota `/api/donations/quote` nesse endereço respondeu HTML em vez de JSON na inspeção. Publicar a página original não ativa esta integração.
 
 ## Executar
 
-Requer Node.js 22 ou superior.
+Node.js >=22.13 (testado em Node 24). O SQLite usa o módulo `node:sqlite` incluído no Node.
 
 ```sh
 npm ci
@@ -14,20 +18,31 @@ cp .env.example .env
 npm run dev
 ```
 
-Abra http://localhost:3000. O aplicativo pode ser visualizado sem credenciais; as rotas de pagamento retornam uma mensagem de indisponibilidade até que sejam configuradas.
+Abra http://localhost:3000. Sem credenciais, a página pode ser visualizada, mas as rotas de criação/cotação informam que o recebimento não foi configurado.
 
-### Configuração
+## Conectar sua conta
 
-- `DEFLOW_API_KEY`: chave da conta DeFlow com scopes `transact` e `read`.
-- `DEFLOW_API_SECRET`: secret correspondente (`X-DF-Secret`).
-- `DEFLOW_WALLET_ID`: opcional; carteira Liquid da sua conta. Sem esse campo, a DeFlow usa a carteira padrão, ou a Liquid mais recente, conforme sua documentação. Confirme a carteira no painel antes de habilitar o recebimento.
-- `PAYMENT_SIGNING_SECRET`: segredo aleatório com pelo menos 32 caracteres. Preserve entre reinícios e instâncias; ele assina a autorização de consulta de cada cobrança por sete dias.
-- `APP_ORIGIN`: origem exata da página, sem barra final. Exemplo local: `http://localhost:3000`. Produção: `https://seu-dominio.com.br`.
-- `PORT`: porta HTTP, padrão 3000.
+1. No painel DeFlow, cadastre e confira a carteira Liquid de destino.
+2. Crie uma API key com scopes `read` e `transact`. Guarde API key e API secret somente no servidor. Comece em sandbox, se disponível na sua conta.
+3. Configure as variáveis na hospedagem:
+   - `DEFLOW_API_KEY`: chave da API.
+   - `DEFLOW_API_SECRET`: secret usado em `X-DF-Secret`.
+   - `DEFLOW_WALLET_ID`: opcional; ID da carteira Liquid da sua conta. Sem ele, a DeFlow escolhe a carteira padrão ou a Liquid mais recente, conforme sua documentação.
+   - `PAYMENT_SIGNING_SECRET`: segredo aleatório da aplicação, mínimo 32 caracteres. Preserve entre reinícios; autoriza a consulta individual por sete dias.
+   - `APP_ORIGIN`: origem pública exata, HTTPS e sem barra final. Para usar o endereço atual, `https://hist-rias-nicas.ai.studio`; somente após publicar o servidor nesse endereço.
+   - `DATABASE_PATH`: caminho do SQLite em um volume persistente. Exemplo: `/data/donations.sqlite`. O padrão local é `./data/donations.sqlite`.
+   - `PORT`: porta HTTP, padrão 3000.
+4. No painel **Desenvolvedores** da DeFlow, na **mesma API key** usada pela aplicação, crie uma inscrição de webhook:
+   - URL: `https://SEU-DOMINIO/api/webhooks/deflow`.
+   - Eventos: `deposit.approved`, `deposit.completed`, `deposit.expired`, `deposit.refunded`.
+   - Copie o segredo da inscrição, exibido uma única vez, para `DEFLOW_WEBHOOK_SECRET` no servidor. Esse segredo é diferente do API secret e do `PAYMENT_SIGNING_SECRET`.
+5. Reinicie/republique o servidor após configurar os segredos. Não gere o segredo de assinatura da aplicação a cada reinício.
+6. Valide em sandbox com uma cobrança da página e o mecanismo de simulação oferecido pela DeFlow. Confira no painel se a entrega do webhook retornou 2xx. A marca sandbox não permite mostrar doação real nem entrar nos totais.
+7. Antes de divulgar, valide o recebimento real com uma pequena contribuição consentida: confira valor e recebedor no banco, o status no painel e o recebimento de DePix na carteira. A primeira transação da conta pode ter limite de R$ 30,00. Gere, pague e feche a página; reabra depois para conferir o registro. Reenviar o mesmo evento no painel não deve aumentar o total novamente.
 
-Nunca use prefixos `VITE_` para esses segredos. Não envie `.env` ao GitHub. Não inclua as chaves em prompts do AI Studio ou no código do React.
+Nunca coloque essas credenciais em código React, variáveis `VITE_`, GitHub ou mensagens de chat. Nome/WhatsApp foram removidos do fluxo porque não são usados. CPF/CNPJ segue para a DeFlow, mas não é persistido no banco desta aplicação.
 
-### Produção
+## Hospedagem
 
 ```sh
 npm ci
@@ -37,28 +52,35 @@ npm run build
 npm start
 ```
 
-A hospedagem deve executar Node e servir tanto a página quanto `/api` na mesma origem HTTPS. Apenas publicar `dist/` em uma hospedagem estática não executa a integração. No AI Studio, o comando de desenvolvimento passa a ser `npm run dev`, iniciando o Express e o Vite juntos. Configure as variáveis no ambiente que realmente executará o servidor.
+A hospedagem deve executar o servidor Node e servir `/api` e a página na mesma origem HTTPS. Publicar apenas `dist/` não executa a integração. O comando de desenvolvimento inicia Express e Vite juntos.
 
-## Fluxo implementado
+**Esta versão exige uma instância Node com disco persistente para o banco SQLite**, incluindo seus arquivos WAL/SHM. Não publique o banco em uma pasta de arquivos públicos. Faça backup com uma ferramenta consistente com SQLite (por exemplo, SQLite backup); não copie somente o arquivo principal com o servidor gravando. Ambientes com disco efêmero, múltiplas réplicas, funções isoladas ou apenas hospedagem estática exigem adaptação para banco/fila compartilhados antes da ativação. Não foi confirmada a compatibilidade da hospedagem do AI Studio com esse requisito.
 
-1. Seleção do valor; mínimo da campanha R$ 5,00, teto de R$ 6.000,00 por cobrança. A DeFlow aplica seus limites adicionais por pagador e pode limitar a primeira transação da conta a R$ 30,00.
-2. Cotação pelo servidor em `/v1/depix/quote`, modo `net`, antes de habilitar a geração. A taxa efetiva e os valores líquidos são exibidos conforme a API, sem recalcular taxas no cliente.
-3. CPF/CNPJ obrigatório do pagador. O servidor confere formato e a DeFlow valida o documento. O documento não é salvo pelo aplicativo nem enviado para serviços de QR Code. As informações necessárias seguem para a DeFlow para processamento.
-4. Criação por `/v1/deposit/create`, valor exato em centavos, destino da carteira definido no servidor. O adicional opcional de R$ 4,99 integra o total da doação e não garante compensação integral das taxas.
-5. QR Code gerado localmente com o `qrCopyPaste` real, inclusive quando a DeFlow não envia imagem. Não se usa o QR ilustrativo original.
-6. Consulta com backoff de 15 a 60 segundos, sem chamadas simultâneas dentro do mesmo fluxo. Sucesso apenas com `depix_sent` e sem `sandbox`. `expired`, `canceled`, `refunded` e `error` encerram a consulta sem sucesso.
-7. Identificador e autorização da cobrança ficam no navegador para retomar a consulta após recarregar ou voltar à página no mesmo navegador. O status salvo é revalidado no servidor. Não salve esse token em logs: ele autoriza consultar essa cobrança. CPF/CNPJ, nome e telefone não são persistidos.
+O processo encerra a conexão HTTP e fecha o banco ao receber SIGTERM/SIGINT. O controle de chamadas à DeFlow também é local ao processo: use uma instância dedicada à API key. Outros consumidores da mesma chave ou escala horizontal exigem limites distribuídos. Proteja a rota pública de criação contra abuso na hospedagem antes de divulgar amplamente.
 
-Cada tentativa tem chave de idempotência que é preservada após falhas ambíguas/timeouts. Nesse caso, repetir exige o mesmo CPF/CNPJ e valor. A identificação local da tentativa usa hash, sem armazenar o documento em texto. Não altere centavos automaticamente para contornar `DUPLICATE_AMOUNT_RECENT`; retome a cobrança anterior ou aguarde a janela informada pela DeFlow. Não há débito automático: criar cobrança não confirma pagamento.
+## Comportamento financeiro
 
-## Limites desta entrega
+- Valores em centavos, de R$ 5,00 a R$ 6.000,00 por cobrança; a DeFlow aplica seus limites adicionais por pagador.
+- Cotação `net` e exibição dos valores/taxa efetiva retornados pela DeFlow. A taxa não é recalculada no navegador.
+- `POST /v1/deposit/create` com CPF/CNPJ obrigatório. A carteira é escolhida no servidor; dados enviados pelo visitante não alteram o destino.
+- QR Code gerado localmente a partir do `qrCopyPaste` real. Não se envia documento/código a um serviço externo de imagens.
+- Idempotency key preservada em timeouts/falhas ambíguas. Repetir exige o mesmo valor e documento. O navegador guarda somente a chave da tentativa e um hash dos parâmetros, sem documento em texto. A trava de valor repetido não é contornada alterando centavos automaticamente.
+- Os recibos financeiros e a fila de eventos são persistidos em SQLite, sem CPF/CNPJ, nomes ou telefone. Eventos só atualizam cobranças registradas por esta integração, com o mesmo valor.
+- Eventos aprovados não entram no total. Sucesso exige `depix_sent` fora de sandbox. Estornos retiram a contribuição dos totais. Eventos repetidos ou atrasados não fazem um estorno voltar a contar como pago.
+- O total público representa valores brutos antes das taxas e o número de cobranças confirmadas, não doadores únicos. A lista recente é anônima e mostra no máximo 20 contribuições. O histórico anterior da conta não é importado. As estatísticas fictícias originais foram removidas.
+- A página atualiza o resumo a cada 30 segundos. A confirmação individual é consultada com backoff de 15 a 60 segundos; o servidor usa o banco para estados terminais e a API como fallback. Fechar o navegador não interrompe o processamento do webhook no servidor.
+- O navegador guarda ID/autorização da cobrança para retomá-la no mesmo navegador. O estado é revalidado. A autorização não deve ser incluída em logs ou compartilhada.
 
-- Não foram feitas cobranças reais: faltam as credenciais e a validação com a conta do titular. Use primeiro uma chave sandbox e confira o fluxo antes de habilitar dinheiro real. Sandbox é sinalizado e nunca mostra confirmação de doação real.
-- Não há webhook nesta versão: a seção 17 e a especificação da assinatura ainda não foram fornecidas. Fechar a página não cancela uma cobrança existente; a DeFlow continua processando, mas a aplicação só retoma a consulta quando for aberta. Não há processamento próprio em segundo plano.
-- Não há banco de dados, conciliação, total arrecadado real, lista pública real ou painel administrativo próprio. O total e os apoiadores anteriores continuam ilustrativos, sinalizados na página. Os campos de nome e WhatsApp originais foram removidos porque não são usados pelo fluxo financeiro desta versão. Para gerenciar a conta e as doações, use o painel DeFlow; uma futura versão deve usar registros persistentes e webhooks para consolidar totais.
-- Controle de chamadas e cache são locais ao processo e conservadores em relação aos limites documentados. Esta versão deve operar com uma instância dedicada a essa chave. Escala horizontal, múltiplos sites ou outros consumidores da mesma chave exigem limite distribuído e fila compartilhada. A rota pública de criação também deve receber proteção contra abuso na hospedagem antes de divulgação ampla.
-- Nenhuma chave foi incluída no projeto e nenhuma publicação em hospedagem foi realizada. O código é entregue em uma branch de revisão no GitHub. Revise também textos e dados da campanha antes de publicar.
+## Recebimento dos webhooks
 
-## Verificação
+`POST /api/webhooks/deflow` usa o corpo bruto antes do parser JSON. Verifica HMAC-SHA256 de `{timestamp}.{corpo-bruto}`, comparação constante, assinatura hexadecimal e tolerância de 300 segundos em ambas as direções. O `DF-Event-Id` deve corresponder ao ID do envelope. A rota não exige Origin de navegador; sua autenticação é a assinatura.
 
-`npm run lint`, `npm run build` e `npm test`. Os testes usam respostas simuladas da DeFlow para verificar valor e carteira, idempotência encaminhada, restrição de consultas, limites de entrada, erros, cotação e sandbox; não fazem solicitações financeiras externas.
+A aplicação grava o evento normalizado em fila durável antes de responder 202. Erros de gravação não recebem confirmação de sucesso, permitindo retentativas da DeFlow. Um worker processa a fila após a resposta e ao reiniciar, aplicando evento e atualização de pagamento na mesma transação. A restrição única no ID estável evita duplicidade inclusive quando o campo `attempt` muda.
+
+Eventos que chegam antes do registro da cobrança são tentados novamente, com backoff, por até 24 horas. Depois ficam `ignored` com motivo `unknown_deposit`; pagamentos de outras integrações não entram nos totais. Divergência de valor fica `failed` com motivo `amount_mismatch`, sem alterar a cobrança. Eventos desconhecidos, como MED, recebem 200 e são ignorados; esta página de doação não bloqueia usuários por MED. Eventos sem assinatura, expirados ou inconsistentes são rejeitados.
+
+No painel DeFlow, acompanhe entregas `dead` e inscrições desativadas. Reenviar entrega duplicada é seguro. Se houver eventos internos `failed`, investigue antes de alterar os registros; o payload financeiro normalizado e o motivo ficam na tabela `events` do SQLite, acessível somente pelo responsável pelo servidor. Os registros e a fila precisam de política de retenção/backup conforme o volume. Não há painel administrativo próprio nesta entrega; use o painel DeFlow para gerir a conta.
+
+## Verificação e limitações
+
+`npm run lint`, `npm run build` e `npm test`. Os testes simulam a DeFlow; cobrem criação, cotação, valor e carteira, autorização de consulta, erros, sandbox, assinatura sobre bytes exatos, replay, eventos fora de ordem, estorno, idempotência, reinício e a corrida entre webhook e criação. Não houve cobrança real nem teste autenticado na conta do titular. A ativação depende de credenciais, inscrição de webhook, hospedagem compatível e validação na conta.
