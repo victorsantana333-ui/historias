@@ -52,6 +52,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useDonation, money } from './useDonation';
+import { useCampaign } from './useCampaign';
 
 // Custom Pix Logo Icon
 const PixIcon = ({ className = "w-5 h-5" }) => (
@@ -71,22 +72,10 @@ interface Supporter {
 export default function App() {
   // Campaign state
   const goalAmount = 288000;
-  // 95% of goal (R$ 288.000 * 0.95 = R$ 273.600)
-  const [raisedAmount] = useState<number>(273600);
-  const [supporterCount] = useState<number>(4820);
+  const { raisedAmount, supporterCount, supporters: campaignSupporters, notice } = useCampaign();
+  const supporters: Supporter[] = campaignSupporters;
   const percentReached = Math.min(Math.round((raisedAmount / goalAmount) * 100), 100);
-  
-  // Drawer Menu state
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
-  
-  // Supporter list state
-  const [supporters] = useState<Supporter[]>([
-    { name: "Anônimo", value: "R$ 100", time: "há 2 minutos" },
-    { name: "Carlos Silva", value: "R$ 50", time: "há 15 minutos" },
-    { name: "Paula Rocha", value: "R$ 250", time: "há 1 hora" },
-    { name: "Anônimo", value: "R$ 75", time: "há 2 horas" },
-    { name: "Marcos Ferreira", value: "R$ 500", time: "há 3 horas" },
-  ]);
 
   // Video state
   const [showVideoOverlay, setShowVideoOverlay] = useState<boolean>(true);
@@ -238,7 +227,7 @@ export default function App() {
     <div className="min-h-screen bg-[#FAFAF7] font-sans text-brand-text pb-28 md:pb-24 selection:bg-brand-yellow/30">
       
       <div role="note" className="mt-16 bg-amber-50 text-amber-900 p-3 text-center text-xs">
-        O total arrecadado e a lista de apoiadores desta página ainda são dados ilustrativos e não estão sincronizados com a DeFlow.
+        {notice}
       </div>
       {/* Fixed Header */}
       <header className="fixed top-0 left-0 right-0 h-16 bg-[#FAFAF7]/90 backdrop-blur-md border-b border-[#e5e5df] z-50 transition-all duration-300">
@@ -467,7 +456,7 @@ export default function App() {
               <span className="block text-lg md:text-2xl font-extrabold text-primary-navy">
                 {supporterCount.toLocaleString('pt-BR')}
               </span>
-              <span className="block text-gray-400 text-xs font-medium">apoiadores</span>
+              <span className="block text-gray-400 text-xs font-medium">doações</span>
             </div>
             <div>
               <span className="block text-lg md:text-2xl font-extrabold text-primary-navy">
@@ -691,6 +680,7 @@ export default function App() {
           </div>
 
           <div className="bg-white rounded-2xl border border-[#e5e5df] shadow-sm divide-y divide-gray-100 overflow-hidden">
+            {supporters.length === 0 && <p className="p-4 text-sm text-gray-500">Ainda não há doações confirmadas para exibir.</p>}
             {supporters.map((sup, idx) => (
               <div 
                 key={idx} 
@@ -1014,7 +1004,7 @@ export default function App() {
               <span className="text-sm md:text-lg font-black text-primary-navy">R$ {raisedAmount.toLocaleString('pt-BR')}</span>
               <span className="text-[10px] text-gray-400">de R$ {goalAmount.toLocaleString('pt-BR')} ({percentReached}%)</span>
             </div>
-            <span className="block text-[10px] text-gray-500 font-semibold">{supporterCount.toLocaleString('pt-BR')} apoiadores ativos</span>
+            <span className="block text-[10px] text-gray-500 font-semibold">{supporterCount.toLocaleString('pt-BR')} doações confirmadas</span>
           </div>
 
           <button
